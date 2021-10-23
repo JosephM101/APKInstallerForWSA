@@ -95,15 +95,97 @@ namespace AndroidDebugBridge
             }
         }
     }
+
+    [Serializable]
+    public class ADBDisconnectErrorException : Exception
+    {
+        private readonly string deviceIp;
+        public ADBDisconnectErrorException(string ip) : base(string.Format("Could not disconnect from wireless ADB instance {0}.", ip))
+        {
+            deviceIp = ip;
+        }
+
+        public ADBDisconnectErrorException(string ip, string message) : base(message)
+        {
+            deviceIp = ip;
+        }
+
+        private string IpAddress
+        {
+            get
+            {
+                if(deviceIp != null)
+                {
+                    return deviceIp;
+                }
+                else
+                {
+                    throw new Exception("Device IP is null.");
+                }
+            }
+        }
+    }
     
     public delegate void ShellCommandStartedEventHandler(object sender, ShellCommandStartedEventArgs e);
     public delegate void ShellCommandCompletedEventHandler(object sender, ShellCommandCompletedEventArgs e);
     public delegate void ApkInstallSucceededEventHandler(object sender, ApkInstallSucceededEventArgs e);
     public delegate void ApkInstallFailedEventHandler(object sender, ApkInstallFailedEventArgs e);
+    public delegate void FilePushSucceededEventHandler(object sender, FilePushSucceededEventArgs e);
+    public delegate void FilePushFailedEventHandler(object sender, FilePushFailedEventArgs e);
+    public delegate void FilePullSucceededEventHandler(object sender, FilePullSucceededEventArgs e);
+    public delegate void FilePullFailedEventHandler(object sender, FilePullFailedEventArgs e);
+
+    public class FilePushSucceededEventArgs : EventArgs
+    {
+        public string Source { get; internal set; }
+        public string Destination { get; internal set; }
+        public FilePushSucceededEventArgs(string source, string destination)
+        {
+            Source = source;
+            Destination = destination;
+        }
+    }
+
+    public class FilePushFailedEventArgs : EventArgs
+    {
+        public string Source { get; internal set; }
+        public string Destination { get; internal set; }
+        public string ErrorMessage { get; internal set; }
+        public FilePushFailedEventArgs(string source, string destination, string errorMessage)
+        {
+            Source = source;
+            Destination = destination;
+            ErrorMessage = errorMessage;
+        }
+    }
+
+    public class FilePullSucceededEventArgs : EventArgs
+    {
+        public string Source { get; internal set; }
+        public string Destination { get; internal set; }
+        public FilePullSucceededEventArgs(string source, string destination)
+        {
+            Source = source;
+            Destination = destination;
+        }
+    }
+
+    public class FilePullFailedEventArgs : EventArgs
+    {
+        public string Source { get; internal set; }
+        public string Destination { get; internal set; }
+        public string ErrorMessage { get; internal set; }
+        public FilePullFailedEventArgs(string source, string destination, string errorMessage)
+        {
+            Source = source;
+            Destination = destination;
+            ErrorMessage = errorMessage;
+        }
+    }
 
     public class ApkInstallSucceededEventArgs : EventArgs
     {
-        public string ApkPath { get; set; }
+        public string ApkPath { get; internal set; }
         public ApkInstallSucceededEventArgs(string apkPath)
         {
             ApkPath = apkPath;
@@ -112,8 +194,8 @@ namespace AndroidDebugBridge
 
     public class ApkInstallFailedEventArgs : EventArgs
     {
-        public string ApkPath { get; set; }
-        public string ErrorMessage { get; set; }
+        public string ApkPath { get; internal set; }
+        public string ErrorMessage { get; internal set; }
         public ApkInstallFailedEventArgs(string apkPath, string errorMessage)
         {
             ApkPath = apkPath;
@@ -162,6 +244,10 @@ namespace AndroidDebugBridge
         public event EventHandler<ShellCommandCompletedEventArgs> ShellCommandCompleted;
         public event EventHandler<ApkInstallSucceededEventArgs> ApkInstallSucceeded;
         public event EventHandler<ApkInstallFailedEventArgs> ApkInstallFailed;
+        public event EventHandler<FilePushSucceededEventArgs> FilePushSucceeded;
+        public event EventHandler<FilePushFailedEventArgs> FilePushFailed;
+        public event EventHandler<FilePullSucceededEventArgs> FilePullSucceeded;
+        public event EventHandler<FilePullFailedEventArgs> FilePullFailed;
 
         protected virtual void OnShellCommandStarted(ShellCommandStartedEventArgs e)
         {
@@ -192,6 +278,42 @@ namespace AndroidDebugBridge
         protected virtual void OnApkInstallFailed(ApkInstallFailedEventArgs e)
         {
             EventHandler<ApkInstallFailedEventArgs> handler = ApkInstallFailed;
+            if (handler != null)
+            {
+                handler(this, e);
+            }
+        }
+
+        protected virtual void OnFilePushSucceeded(FilePushSucceededEventArgs e)
+        {
+            EventHandler<FilePushSucceededEventArgs> handler = FilePushSucceeded;
+            if (handler != null)
+            {
+                handler(this, e);
+            }
+        }
+
+        protected virtual void OnFilePushFailed(FilePushFailedEventArgs e)
+        {
+            EventHandler<FilePushFailedEventArgs> handler = FilePushFailed;
+            if (handler != null)
+            {
+                handler(this, e);
+            }
+        }
+
+        protected virtual void OnFilePullSucceeded(FilePullSucceededEventArgs e)
+        {
+            EventHandler<FilePullSucceededEventArgs> handler = FilePullSucceeded;
+            if (handler != null)
+            {
+                handler(this, e);
+            }
+        }
+
+        protected virtual void OnFilePullFailed(FilePullFailedEventArgs e)
+        {
+            EventHandler<FilePullFailedEventArgs> handler = FilePullFailed;
             if (handler != null)
             {
                 handler(this, e);
@@ -259,7 +381,7 @@ namespace AndroidDebugBridge
             }
         }
 
-        public void ConnectToDevice(string IpAddress)
+        public void ConnectDevice(string IpAddress)
         {
             string output = runAdbCommand(String.Format("connect {0}", IpAddress), true).Output;
             if(output.Contains("connected to " + IpAddress))
@@ -272,9 +394,53 @@ namespace AndroidDebugBridge
             }
         }
 
+        public bool DisconnectDevice(string IpAddress)
+        {
+            string output = runAdbCommand(String.Format("disconnect {0}", IpAddress), true).Output;
+            if (output.Contains("disconnected from " + IpAddress))
+            {
+                return true;
+            }
+            else
+            {
+                throw new ADBDisconnectErrorException(IpAddress);
+            }
+        }
+
+        public bool PushFile (string source, string destination)
+        {
+            INTERNAL_AdbCommandResult result = runAdbCommand(String.Format("push {0} {1}", source, destination), true);
+            string output = result.ErrorOutput;
+            if (output.Contains("bytes in"))
+            {
+                OnFilePushSucceeded(new FilePushSucceededEventArgs(source, destination));
+                return true;
+            }
+            else
+            {
+                OnFilePushFailed(new FilePushFailedEventArgs(source, destination, result.ErrorOutput));
+                return false;
+            }
+        }
+
+        public bool PullFile(string source, string destination)
+        {
+            INTERNAL_AdbCommandResult result = runAdbCommand(String.Format("pull {0} {1}", source, destination), true);
+            string output = result.ErrorOutput;
+            if (output.Contains("bytes in"))
+            {
+                OnFilePullSucceeded(new FilePullSucceededEventArgs(source, destination));
+                return true;
+            }
+            else
+            {
+                OnFilePullFailed(new FilePullFailedEventArgs(source, destination, result.ErrorOutput));
+                return false;
+            }
+        }
+
         public bool InstallApk(string ApkPath)
         {
-            //string output = runAdbCommand(String.Format("install \"{0}\"", ApkPath), true).ErrorOutput;
             INTERNAL_AdbCommandResult result = runAdbCommand(String.Format("install \"{0}\"", ApkPath), true);
             string output = result.ErrorOutput; // For some reason, some functions of ADB, even if they are successful, print messages to stderr instead of stdout.
             if(output.Contains("Success"))
@@ -288,7 +454,19 @@ namespace AndroidDebugBridge
                 OnApkInstallFailed(apkInstallFailedEventArgs);
                 return false;
             }
-        
+        }
+
+        public bool RebootToBootloader()
+        {
+            string output = runAdbCommand("reboot-bootloader", true).Output;
+            if(output.Contains("adbd is now in the bootloader"))
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
         }
 
         private void TestAdb()
