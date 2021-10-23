@@ -75,6 +75,11 @@ namespace AndroidDebugBridge
             deviceIp = ip;
         }
 
+        public ADBConnectionErrorException(string ip, string message) : base(message)
+        {
+            deviceIp = ip;
+        }
+
         private string IpAddress
         {
             get
@@ -90,8 +95,31 @@ namespace AndroidDebugBridge
             }
         }
     }
+    
     public delegate void ShellCommandStartedEventHandler(object sender, ShellCommandStartedEventArgs e);
     public delegate void ShellCommandCompletedEventHandler(object sender, ShellCommandCompletedEventArgs e);
+    public delegate void ApkInstallSucceededEventHandler(object sender, ApkInstallSucceededEventArgs e);
+    public delegate void ApkInstallFailedEventHandler(object sender, ApkInstallFailedEventArgs e);
+
+    public class ApkInstallSucceededEventArgs : EventArgs
+    {
+        public string ApkPath { get; set; }
+        public ApkInstallSucceededEventArgs(string apkPath)
+        {
+            ApkPath = apkPath;
+        }
+    }
+
+    public class ApkInstallFailedEventArgs : EventArgs
+    {
+        public string ApkPath { get; set; }
+        public string ErrorMessage { get; set; }
+        public ApkInstallFailedEventArgs(string apkPath, string errorMessage)
+        {
+            ApkPath = apkPath;
+            ErrorMessage = errorMessage;
+        }
+    }
 
     public class ShellCommandStartedEventArgs : EventArgs
     {
@@ -132,6 +160,9 @@ namespace AndroidDebugBridge
         //Event handlers
         public event EventHandler<ShellCommandStartedEventArgs> ShellCommandStarted;
         public event EventHandler<ShellCommandCompletedEventArgs> ShellCommandCompleted;
+        public event EventHandler<ApkInstallSucceededEventArgs> ApkInstallSucceeded;
+        public event EventHandler<ApkInstallFailedEventArgs> ApkInstallFailed;
+
         protected virtual void OnShellCommandStarted(ShellCommandStartedEventArgs e)
         {
             EventHandler<ShellCommandStartedEventArgs> handler = ShellCommandStarted;
@@ -143,6 +174,24 @@ namespace AndroidDebugBridge
         protected virtual void OnShellCommandCompleted(ShellCommandCompletedEventArgs e)
         {
             EventHandler<ShellCommandCompletedEventArgs> handler = ShellCommandCompleted;
+            if (handler != null)
+            {
+                handler(this, e);
+            }
+        }
+
+        protected virtual void OnApkInstallSucceeded(ApkInstallSucceededEventArgs e)
+        {
+            EventHandler<ApkInstallSucceededEventArgs> handler = ApkInstallSucceeded;
+            if (handler != null)
+            {
+                handler(this, e);
+            }
+        }
+
+        protected virtual void OnApkInstallFailed(ApkInstallFailedEventArgs e)
+        {
+            EventHandler<ApkInstallFailedEventArgs> handler = ApkInstallFailed;
             if (handler != null)
             {
                 handler(this, e);
@@ -199,7 +248,7 @@ namespace AndroidDebugBridge
 
         public void StartServer()
         {
-            string output = runAdbCommand("start-server", true);
+            string output = runAdbCommand("start-server", true).Output;
             if(output.Contains("daemon started successfully"))
             {
                 return;
@@ -210,12 +259,45 @@ namespace AndroidDebugBridge
             }
         }
 
+        public void ConnectToDevice(string IpAddress)
+        {
+            string output = runAdbCommand(String.Format("connect {0}", IpAddress), true).Output;
+            if(output.Contains("connected to " + IpAddress))
+            {
+                return;
+            }
+            else
+            {
+                throw new ADBConnectionErrorException(IpAddress);
+            }
+        }
+
+        public bool InstallApk(string ApkPath)
+        {
+            //string output = runAdbCommand(String.Format("install \"{0}\"", ApkPath), true).ErrorOutput;
+            INTERNAL_AdbCommandResult result = runAdbCommand(String.Format("install \"{0}\"", ApkPath), true);
+            string output = result.ErrorOutput; // For some reason, some functions of ADB, even if they are successful, print messages to stderr instead of stdout.
+            if(output.Contains("Success"))
+            {
+                ApkInstallSucceededEventArgs apkInstallSucceededEventArgs = new ApkInstallSucceededEventArgs(apkPath);
+                OnApkInstallSucceeded(apkInstallSucceededEventArgs);
+                return true;
+            }
+            else {
+                ApkInstallFailedEventArgs apkInstallFailedEventArgs = new ApkInstallFailedEventArgs(apkPath, result.ErrorOutput);
+                OnApkInstallFailed(apkInstallFailedEventArgs);
+                return false;
+            }
+        
+        }
+
         private void TestAdb()
         {
-            string output = runAdbCommand("version", true);
+            string output = runAdbCommand("version", true).Output;
             if(output.Contains("Android Debug Bridge"))
             {
-                adbVersion = output.Substring(output.IndexOf("Android Debug Bridge") + 21, output.IndexOf("(") - output.IndexOf("Android Debug Bridge") - 21);
+                // adbVersion = output.Substring(output.IndexOf("Android Debug Bridge") + 21, output.IndexOf("(") - output.IndexOf("Android Debug Bridge") - 21);
+                adbVersion = output;
             }
             else
             {
@@ -228,9 +310,9 @@ namespace AndroidDebugBridge
             ShellCommandStartedEventArgs shellCommandStartedEventArgs = new ShellCommandStartedEventArgs(command);
             OnShellCommandStarted(shellCommandStartedEventArgs);
 
-            string output = runAdbCommand("shell " + command, false);
+            string output = runAdbCommand("shell " + command, false).Output;
 
-            ShellCommandCompletedEventArgs shellCommandCompletedEventArgs = new ShellCommandCompletedEventArgs(new AdbCommandResult(output, false, ""));
+            ShellCommandCompletedEventArgs shellCommandCompletedEventArgs = new ShellCommandCompletedEventArgs(new AdbCommandResult(output, "", false));
             OnShellCommandCompleted(shellCommandCompletedEventArgs);
 
             return output;
@@ -244,7 +326,7 @@ namespace AndroidDebugBridge
         public List<AndroidDevice> GetDevices()
         {
             List<AndroidDevice> devices = new List<AndroidDevice>();
-            string output = runAdbCommand("devices", true);
+            string output = runAdbCommand("devices", true).Output;
             string[] lines = output.Split(new string[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
             foreach (string line in lines)
             {
@@ -271,10 +353,10 @@ namespace AndroidDebugBridge
             // startInfo.RedirectStandardOutput = true;
             // startInfo.RedirectStandardError = true;
             // Process.Start(startInfo);
-            return runAdbCommand("shell getprop ro.build.version.release", false);
+            return runAdbCommand("shell getprop ro.build.version.release", false).Output;
         }
 
-        private string runAdbCommand(string command, bool WaitForExit)
+        private INTERNAL_AdbCommandResult runAdbCommand(string command, bool WaitForExit)
         {
             // ProcessStartInfo startInfo = new ProcessStartInfo();
             // startInfo.FileName = adbPath;
@@ -296,13 +378,30 @@ namespace AndroidDebugBridge
             startInfo.RedirectStandardOutput = true;
             startInfo.RedirectStandardError = true;
             Process process = Process.Start(startInfo);
-            string output = process.StandardOutput.ReadToEnd();
             if(WaitForExit)
             {
                 process.WaitForExit();
             }
-            return output;
+            string output = process.StandardOutput.ReadToEnd();
+            string outputErr = process.StandardError.ReadToEnd();
+            return new INTERNAL_AdbCommandResult(output, outputErr);
         }
+    }
+
+    public class INTERNAL_AdbCommandResult
+    {
+        private string output;
+        private string errorOutput;
+
+        public INTERNAL_AdbCommandResult(string output, string errorOutput)
+        {
+            this.output = output;
+            //this.commandFailed = commandFailed;
+            this.errorOutput = errorOutput;
+        }
+
+        public string Output { get { return output; } }
+        public string ErrorOutput { get { return errorOutput; } }
     }
 
     public class AdbCommandResult
@@ -311,7 +410,7 @@ namespace AndroidDebugBridge
         private bool commandFailed;
         private string errorOutput;
 
-        public AdbCommandResult(string output, bool commandFailed, string errorOutput)
+        public AdbCommandResult(string output, string errorOutput, bool commandFailed)
         {
             this.output = output;
             this.commandFailed = commandFailed;
