@@ -279,12 +279,12 @@ namespace AndroidDebugBridge
             string output = result.ErrorOutput; // For some reason, some functions of ADB, even if they are successful, print messages to stderr instead of stdout.
             if(output.Contains("Success"))
             {
-                ApkInstallSucceededEventArgs apkInstallSucceededEventArgs = new ApkInstallSucceededEventArgs(apkPath);
+                ApkInstallSucceededEventArgs apkInstallSucceededEventArgs = new ApkInstallSucceededEventArgs(ApkPath);
                 OnApkInstallSucceeded(apkInstallSucceededEventArgs);
                 return true;
             }
             else {
-                ApkInstallFailedEventArgs apkInstallFailedEventArgs = new ApkInstallFailedEventArgs(apkPath, result.ErrorOutput);
+                ApkInstallFailedEventArgs apkInstallFailedEventArgs = new ApkInstallFailedEventArgs(ApkPath, result.ErrorOutput);
                 OnApkInstallFailed(apkInstallFailedEventArgs);
                 return false;
             }
