@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Shell;
 using System.Windows.Threading;
+using AndroidDebugBridge;
 
 namespace APKInstallerForWSA
 {
@@ -21,83 +22,48 @@ namespace APKInstallerForWSA
             installApk(apkPath);
         }
 
-        String installCommand;
-
         Dispatcher currentDispatcher = Dispatcher.CurrentDispatcher;
 
         void installApk(string apk)
         {
-            installCommand = "install \"" + apk + "\"";
-            //MessageBox.Show(installCommand);
             Task task = new Task(() =>
             {
-                var proc = new Process
-                {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = "adb.exe",
-                        Arguments = installCommand,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        StandardOutputEncoding = System.Text.Encoding.UTF8,
-                        CreateNoWindow = true
-                    }
-                };
-                proc.Start();
+                ADB adb = new ADB();
+                adb.ApkInstallFailed += Adb_ApkInstallFailed;
+                bool success = adb.InstallApk(apk);
 
-                string DataOutput = "";
-
-                while (!proc.StandardOutput.EndOfStream)
+                if (success)
                 {
-                    var line = proc.StandardOutput.ReadLine();
-                    MessageBox.Show(line);
-                    DataOutput += line.ToString();
+                    currentDispatcher.Invoke(
+                        () =>
+                        {
+                            label1.Text = "Done!";
+                            progressBar1.Style = ProgressBarStyle.Continuous;
+                            progressBar1.Value = 0;
+                            this.Refresh();
+                            progressBar1.Value = 100;
+                            button1.Enabled = true;
+                        });
                 }
-                proc.WaitForExit();
-                //string DataOutput = proc.StandardOutput.ReadToEnd();
-
-                //if (DataOutput.Contains("Success"))
-                //{
-                //    //System.Windows.Application.Current.Dispatcher.Invoke(
-                //    currentDispatcher.Invoke(
-                //    () =>
-                //    {
-                //        label1.Text = "Done!";
-                //        progressBar1.Style = ProgressBarStyle.Continuous;
-                //        progressBar1.Value = 0;
-                //        this.Refresh();
-                //        progressBar1.Value = 100;
-                //        button1.Enabled = true;
-                //    });
-                //}
-                //else
-                //{
-                //    //System.Windows.Application.Current.Dispatcher.Invoke(
-                //    currentDispatcher.Invoke(
-                //    () =>
-                //    {
-                //        label1.Text = "Error installing";
-                //        progressBar1.Style = ProgressBarStyle.Continuous;
-                //        progressBar1.Value = 0;
-                //        this.Refresh();
-                //        button1.Enabled = true;
-                //        MessageBox.Show("Error installing APK. \n\nMessage: " + DataOutput, "Error installing", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                //    });
-                //}
-                currentDispatcher.Invoke(
-                    () =>
-                    {
-                        label1.Text = "Done!";
-                        progressBar1.Style = ProgressBarStyle.Continuous;
-                        progressBar1.Value = 0;
-                        this.Refresh();
-                        progressBar1.Value = 100;
-                        button1.Enabled = true;
-                        
-                    });
+                else
+                {
+                    currentDispatcher.Invoke(
+                        () =>
+                        {
+                            label1.Text = "Error installing.";
+                            progressBar1.Style = ProgressBarStyle.Continuous;
+                            progressBar1.Value = 0;
+                            this.Refresh();
+                            button1.Enabled = true;
+                        });
+                }
             });
             task.Start();
+        }
+
+        private void Adb_ApkInstallFailed(object sender, ApkInstallFailedEventArgs e)
+        {
+            MessageBox.Show(String.Format("Installation failed. \n\n{0}", e.ErrorMessage), "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         private void button1_Click(object sender, EventArgs e)
