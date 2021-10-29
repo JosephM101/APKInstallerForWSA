@@ -25,10 +25,10 @@ jobs:
       run: dotnet test --no-build --verbosity normal
     
     - name: List dir
-      run: dir
+      run: dir APKInstallerForWSA
     
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v2.2.4
       with:
         name: build
-        path: bin
+        path: APKInstallerForWSA/bin
