@@ -1,3 +1,5 @@
+[![.NET build status](https://github.com/JosephM101/APKInstallerForWSA/actions/workflows/dotnet.yml/badge.svg)](https://github.com/JosephM101/APKInstallerForWSA/actions/workflows/dotnet.yml)
+
 # APK Install Helper for WSA
 Simple APK Installer for Windows Subsystem for Android (that is very much in the beta stage)
 
