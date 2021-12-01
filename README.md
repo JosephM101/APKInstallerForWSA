@@ -1,2 +1,2 @@
 # APK Install Helper for WSA
- APK Installer for Windows Subsystem for Android
+Simple APK Installer for Windows Subsystem for Android (that is very much in the beta stage)
